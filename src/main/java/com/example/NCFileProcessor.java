@@ -214,7 +214,7 @@ public class NCFileProcessor {
      */
     private void checkForNewFilesInFolder(Path folder) throws Exception {
         String folderName = folder.getFileName().toString();
-        System.out.println("  检查已处理文件夹中的新文件: " + folderName);
+       //System.out.println("  检查已处理文件夹中的新文件: " + folderName);
         
         // 递归查找所有NC文件
         List<Path> ncFiles = findNCFilesRecursively(folder);

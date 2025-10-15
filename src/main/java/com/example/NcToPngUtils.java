@@ -286,47 +286,51 @@ public class NcToPngUtils {
         List<NcBeanModel> ncBeanModelList = new ArrayList<>();
         String timeStr = "_" + new Date().getTime();
         
-        // level默认值处理：如果level为null或空，设置默认值为"1000"
+        // levelĬ��ֵ���������levelΪnull��գ�����Ĭ��ֵΪ"1000"
         String finalLevel = (level == null || level.trim().isEmpty()) ? "1000" : level;
         
-        // 智能时间处理：优先使用文件名中的日期，再结合NC文件中的时间信息
+        // ����ʱ�䴦��������ʹ���ļ����е����ڣ��ٽ��NC�ļ��е�ʱ����Ϣ
         Long finalTime = intelligentTimeProcessing(time, ncFilePath);
         
-        {
+        boolean isU10 = isTargetWindVariable(variableName, "u10");
+        boolean isV10 = isTargetWindVariable(variableName, "v10");
+
+        if (isU10 || isV10) {
+            if (isU10) {
+                Variable v10Variable = findVariableIgnoreCase(variableMap, "v10");
+                if (v10Variable == null) {
+                    log.warn("未找到对应的v10要素，无法将u10和v10组合生成红黑图");
+                } else {
+                    NcDataModel vNcDataModel = getFaceData(v10Variable, org, sha);
+                    if (vNcDataModel == null || vNcDataModel.getDataArray() == null) {
+                        log.warn("v10要素数据读取失败，无法生成红黑图");
+                    } else {
+                        String uvVariableName = "uv10";
+                        String uvNamePrefix = buildCombinedNamePrefix(namePrefix, variableName, uvVariableName);
+                        String baseDir = pngPath + File.separator + uvVariableName;
+                        String fileName = uvNamePrefix + timeStr + ".png";
+                        toPngPath = (baseDir + File.separator + fileName).replace("/", File.separator).replace("\\", File.separator);
+                        File parentDir = new File(toPngPath).getParentFile();
+                        if (parentDir != null && !parentDir.exists() && !parentDir.mkdirs()) {
+                            log.warn("生成红黑图目录失败: {}", parentDir.getAbsolutePath());
+                        }
+                        ncDataModel.setIsWind(Boolean.TRUE)
+                                .setUDataArray(ncDataModel.getDataArray())
+                                .setVDataArray(vNcDataModel.getDataArray());
+                        ncDataModel.toWindPng(toPngPath, lat, lon);
+                        ncBeanModelList.add(new NcBeanModel().setPngPath(toPngPath).setVariableName(uvVariableName).setLevel(finalLevel).setTime(finalTime));
+                    }
+                }
+            } else {
+                log.debug("v10要素跳过生成，等待u10触发合成：{}", namePrefix);
+            }
+        } else {
             toPngPath = pngPath + File.separator + variableName + File.separator + namePrefix + timeStr + ".png";
-            // log.info("开始输出要素:{},红黑图:{}", variableName, toPngPath);
             toPngPath = toPngPath.replace("/", File.separator).replace("\\", File.separator);
             ncDataModel.toPng(toPngPath, lat, lon, fromLeft, fromBottom);
             ncBeanModelList.add(new NcBeanModel().setPngPath(toPngPath).setVariableName(variableName).setLevel(finalLevel).setTime(finalTime));
         }
-        // 判断是否为风
-//        String[] uNamePrefixArray = new String[]{"uu", "UU", "u_", "U_", "u", "U","U_component_of_wind_isobaric",};
-//        String[] vNamePrefixArray = new String[]{"vv", "VV", "v_", "V_", "v", "V","V_component_of_wind_isobaric",};
-//        String[] uvNamePrefixArray = new String[]{"uv", "UV", "uv_", "UV_", "uv", "UV","UV_component_of_wind_isobaric",};
-//        String uPrefix, vPrefix, uvPrefix;
-//        for (int i = 0; i < uNamePrefixArray.length; i++) {
-//            uPrefix = uNamePrefixArray[i];
-//            vPrefix = vNamePrefixArray[i];
-//            uvPrefix = uvNamePrefixArray[i];
-//            if (StringUtils.startsWith(variableName, uPrefix)) {
-//                log.info("输出风的红黑图!");
-//                String vVariableName = variableName.replaceFirst(uPrefix, vPrefix);
-//                // 读取 v 风 的要素
-//                Variable vVariable = variableMap.get(vVariableName);
-//                // 判断是否为UV要素
-//                if (vVariable == null) {
-//                    continue;
-//                }
-//                NcDataModel vNcDataModel = getFaceData(vVariable, org, sha);
-//                ncDataModel.setVDataArray(vNcDataModel.getDataArray())
-//                        .setUDataArray(ncDataModel.getDataArray());
-//                String uvVariableName = variableName.replaceFirst(uPrefix, uvPrefix);
-//                toPngPath = pngPath + File.separator + uvVariableName + File.separator + namePrefix.replaceAll(variableName, uvVariableName) + timeStr + ".png";
-//                ncDataModel.toWindPng(toPngPath, lat, lon);
-//                ncBeanModelList.add(new NcBeanModel().setPngPath(toPngPath).setVariableName(uvVariableName).setLevel(finalLevel).setTime(finalTime));
-//                break;
-//            }
-//        }
+
         // 设置为null 方便gc
         ncDataModel = null;
         return ncBeanModelList;
@@ -342,6 +346,40 @@ public class NcToPngUtils {
             }
         }
         return false;
+    }
+
+    private static boolean isTargetWindVariable(String variableName, String targetName) {
+        return variableName != null && targetName != null && variableName.equalsIgnoreCase(targetName);
+    }
+
+    private static Variable findVariableIgnoreCase(Map<String, Variable> variableMap, String targetName) {
+        if (variableMap == null || targetName == null) {
+            return null;
+        }
+        for (Map.Entry<String, Variable> entry : variableMap.entrySet()) {
+            if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(targetName)) {
+                return entry.getValue();
+            }
+            Variable candidate = entry.getValue();
+            if (candidate != null && candidate.getShortName() != null && candidate.getShortName().equalsIgnoreCase(targetName)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private static String buildCombinedNamePrefix(String originalPrefix, String originalVariableName, String combinedName) {
+        if (originalPrefix == null || originalVariableName == null || combinedName == null) {
+            return combinedName;
+        }
+        if (originalPrefix.equalsIgnoreCase(originalVariableName)) {
+            return combinedName;
+        }
+        if (originalPrefix.length() >= originalVariableName.length()
+                && originalPrefix.substring(0, originalVariableName.length()).equalsIgnoreCase(originalVariableName)) {
+            return combinedName + originalPrefix.substring(originalVariableName.length());
+        }
+        return combinedName + "_" + originalPrefix;
     }
 
     @Data

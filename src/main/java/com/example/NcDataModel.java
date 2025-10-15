@@ -298,9 +298,8 @@ public class NcDataModel {
         // 写入风
         JsonUtils.writeJsonToFile(String.valueOf(uMin), String.valueOf(vMin), String.valueOf(uMax), String.valueOf(vMax), String.valueOf(width), String.valueOf(height), String.valueOf(lonMin), String.valueOf(latMin), String.valueOf(lonMax), String.valueOf(latMax),
                 String.valueOf(Math.abs(lonStep)), String.valueOf(Math.abs(latStep)), String.valueOf(unit != null ? unit : ""), path);
+        PngUtils.writeUVDataToPngFromLeftBottom(path, uData, vData, uData[0].length, uData.length);
         // 从左下角开始渲染
-        //PngUtils.writeUVDataToPngFromLeftBottom(path, uData, vData, uData[0].length, uData.length);
-       // PngUtils.writeDataToPngFromLeftTop(path, data, data[0].length, data.length);
     }
 
     double[] peekValue(double[][] data) {
