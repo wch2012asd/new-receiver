@@ -1,0 +1,1 @@
+{"min": .\output\test\cbh\cbh_19700101_08_20140102_07.json, "max": 23.58817, "width": 15388.40678, "height": 1440, "lonmin": 721, "latmin": 0.0, "lonmax": -90.0, "latmax": 359.75, "lonstep": 90.0, "latstep": 0.25, "unit": "0.25"}
