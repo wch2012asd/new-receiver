@@ -1,7 +1,8 @@
 package com.example;
 
 import java.io.*;
-import java.util.Properties;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 配置管理器 - 管理应用程序配置
@@ -17,6 +18,7 @@ public class ConfigManager {
     private String dbPassword;
     private String dbSchema;
     private String excludeDatabasePath;
+    private Set<String> elementFilterKeywords = Collections.emptySet();
     
     public ConfigManager() {
         loadConfig();
@@ -53,11 +55,15 @@ public class ConfigManager {
             // 排除数据库路径配置
             excludeDatabasePath = getConfigValue("EXCLUDE_DATABASE_PATH", props.getProperty("exclude.database.path", ""));
             
+            String filterRaw = getConfigValue("ELEMENT_FILTER_KEYWORDS", props.getProperty("element.filter.keywords", ""));
+            elementFilterKeywords = parseElementFilterKeywords(filterRaw);
+            
             System.out.println("配置文件加载成功: " + CONFIG_FILE);
             System.out.println("输入目录: " + inputDirectory);
             System.out.println("输出目录: " + outputDirectory);
             System.out.println("数据库URL: " + dbUrl);
             System.out.println("排除数据库路径: " + (excludeDatabasePath.isEmpty() ? "未配置" : excludeDatabasePath));
+            System.out.println("Ԫ�ز����б�: " + (elementFilterKeywords.isEmpty() ? "δ����" : String.join(",", elementFilterKeywords)));
             
         } catch (IOException e) {
             System.err.println("加载配置文件失败，使用默认配置: " + e.getMessage());
@@ -84,6 +90,7 @@ public class ConfigManager {
         dbPassword = "geovis123";
         dbSchema = "public";
         excludeDatabasePath = "";
+        elementFilterKeywords = Collections.emptySet();
         
         saveConfig();
     }
@@ -101,6 +108,7 @@ public class ConfigManager {
             props.setProperty("database.password", dbPassword);
             props.setProperty("database.schema", dbSchema);
             props.setProperty("exclude.database.path", excludeDatabasePath);
+            props.setProperty("element.filter.keywords", elementFilterKeywords.isEmpty() ? "" : String.join(",", elementFilterKeywords));
             
             try (FileOutputStream fos = new FileOutputStream(CONFIG_FILE)) {
                 props.store(fos, "NC File Processor Configuration");
@@ -140,6 +148,10 @@ public class ConfigManager {
         return excludeDatabasePath;
     }
     
+    public Set<String> getElementFilterKeywords() {
+        return elementFilterKeywords;
+    }
+    
     /**
      * 检查指定路径是否应该排除数据库写入
      */
@@ -158,5 +170,16 @@ public class ConfigManager {
             System.err.println("检查排除路径失败: " + e.getMessage());
             return false;
         }
+    }
+
+    private Set<String> parseElementFilterKeywords(String rawKeywords) {
+        if (rawKeywords == null || rawKeywords.trim().isEmpty()) {
+            return Collections.emptySet();
+        }
+        return Arrays.stream(rawKeywords.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .map(String::toLowerCase)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 }

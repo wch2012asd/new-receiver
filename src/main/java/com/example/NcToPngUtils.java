@@ -52,6 +52,10 @@ public class NcToPngUtils {
      * @param pngPath
      */
     public static List<NcBeanModel> ncToPng(String filePath, String pngPath) {
+        return ncToPng(filePath, pngPath, Collections.emptySet());
+    }
+
+    public static List<NcBeanModel> ncToPng(String filePath, String pngPath, Set<String> filterKeywords) {
         List<NcBeanModel> ncBeanModelList = new ArrayList<>();
         try (NetcdfFile netcdfFile = NetcdfFile.open(filePath)) {
             // 获取要素
@@ -61,8 +65,12 @@ public class NcToPngUtils {
                 // 简单过滤一下
                 Variable variable = variableEntry.getValue();
                 if (variable.getRank() >= minRank && !StringUtils.equalsAnyIgnoreCase(variable.getShortName(), "time")) {
+                    if (shouldSkipVariable(variable.getShortName(), filterKeywords)) {
+                        log.info("???????????��??????:{}", variable.getShortName());
+                        continue;
+                    }
                     try {
-                        ncBeanModelList.addAll(variableToPng(pngPath, variable, variableMap));
+                        ncBeanModelList.addAll(variableToPng(pngPath, variable, variableMap, filterKeywords));
                     } catch (Exception e) {
                         e.printStackTrace();
                         log.error("要素:{},出图失败!", variable.getShortName());
@@ -93,7 +101,7 @@ public class NcToPngUtils {
             if (variable == null) {
                 throw new RuntimeException("要素:" + variableName + "不存在");
             }
-            ncBeanModelList.addAll(variableToPng(pngPath, variable, variableMap));
+            ncBeanModelList.addAll(variableToPng(pngPath, variable, variableMap, Collections.emptySet()));
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -107,7 +115,7 @@ public class NcToPngUtils {
      * @param variable
      * @param variableMap
      */
-    private static List<NcBeanModel> variableToPng(String pngPath, Variable variable, Map<String, Variable> variableMap) {
+    private static List<NcBeanModel> variableToPng(String pngPath, Variable variable, Map<String, Variable> variableMap, Set<String> filterKeywords) {
         List<NcBeanModel> ncBeanModelList = new ArrayList<>();
         String variableName = variable.getShortName();
         int rank = variable.getRank();
@@ -119,9 +127,9 @@ public class NcToPngUtils {
         // 读取经纬度数据
         if (rank == minRank) {
             // 如果为 2维 的 直接转png
-            ncBeanModelList.addAll(variableToPng(variable, null, null, variableMap, pngPath, variableName, null, null, pngPath));
+            ncBeanModelList.addAll(variableToPng(variable, null, null, variableMap, pngPath, variableName, null, null, pngPath, filterKeywords));
         } else {
-            deepBuildDimensionData(variableMap, variable.getDimensions(), 0, new ArrayList<>(), variableName, pngPath, variable, ncBeanModelList, pngPath);
+            deepBuildDimensionData(variableMap, variable.getDimensions(), 0, new ArrayList<>(), variableName, pngPath, variable, ncBeanModelList, pngPath, filterKeywords);
         }
         return ncBeanModelList;
     }
@@ -139,7 +147,7 @@ public class NcToPngUtils {
      * @param ncBeanModelList 存储bean
      * @return
      */
-    private static void deepBuildDimensionData(Map<String, Variable> variableMap, List<Dimension> dimensionList, Integer layerIndex, List<Integer> preOrg, String prefix, String filePath, Variable dataVariable, List<NcBeanModel> ncBeanModelList, String ncFilePath) {
+    private static void deepBuildDimensionData(Map<String, Variable> variableMap, List<Dimension> dimensionList, Integer layerIndex, List<Integer> preOrg, String prefix, String filePath, Variable dataVariable, List<NcBeanModel> ncBeanModelList, String ncFilePath, Set<String> filterKeywords) {
         if (layerIndex >= dimensionList.size()) {
             // 代表超过了 维度 直接返回
             return;
@@ -210,12 +218,12 @@ public class NcToPngUtils {
                         if (StringUtils.equals(shortName, "time")) {
                             level = null;
                         }
-                        ncBeanModelList.addAll(variableToPng(dataVariable, copyPreOrg, copyPreSha, variableMap, filePath, prefixNew, level, time, ncFilePath));
+                        ncBeanModelList.addAll(variableToPng(dataVariable, copyPreOrg, copyPreSha, variableMap, filePath, prefixNew, level, time, ncFilePath, filterKeywords));
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
                 } else {
-                    deepBuildDimensionData(variableMap, dimensionList, next, copyPreOrg, prefixNew, filePath, dataVariable, ncBeanModelList, ncFilePath);
+                    deepBuildDimensionData(variableMap, dimensionList, next, copyPreOrg, prefixNew, filePath, dataVariable, ncBeanModelList, ncFilePath, filterKeywords);
                 }
 
             }
@@ -235,7 +243,7 @@ public class NcToPngUtils {
      * @param level       层次
      * @return
      */
-    private static List<NcBeanModel> variableToPng(Variable variable, List<Integer> org, List<Integer> sha, Map<String, Variable> variableMap, String pngPath, String namePrefix, String level, Long time, String ncFilePath) {
+    private static List<NcBeanModel> variableToPng(Variable variable, List<Integer> org, List<Integer> sha, Map<String, Variable> variableMap, String pngPath, String namePrefix, String level, Long time, String ncFilePath, Set<String> filterKeywords) {
         String variableName = variable.getShortName();
         // 获取面的数据
         NcDataModel ncDataModel = getFaceData(variable, org, sha);
@@ -306,19 +314,23 @@ public class NcToPngUtils {
                         log.warn("v10要素数据读取失败，无法生成红黑图");
                     } else {
                         String uvVariableName = "uv10";
-                        String uvNamePrefix = buildCombinedNamePrefix(namePrefix, variableName, uvVariableName);
-                        String baseDir = pngPath + File.separator + uvVariableName;
-                        String fileName = uvNamePrefix + timeStr + ".png";
-                        toPngPath = (baseDir + File.separator + fileName).replace("/", File.separator).replace("\\", File.separator);
-                        File parentDir = new File(toPngPath).getParentFile();
-                        if (parentDir != null && !parentDir.exists() && !parentDir.mkdirs()) {
-                            log.warn("生成红黑图目录失败: {}", parentDir.getAbsolutePath());
+                        if (shouldSkipVariable(uvVariableName, filterKeywords)) {
+                            log.info("Skip filtered element: {}", uvVariableName);
+                        } else {
+                            String uvNamePrefix = buildCombinedNamePrefix(namePrefix, variableName, uvVariableName);
+                            String baseDir = pngPath + File.separator + uvVariableName;
+                            String fileName = uvNamePrefix + timeStr + ".png";
+                            toPngPath = (baseDir + File.separator + fileName).replace("/", File.separator).replace("\\", File.separator);
+                            File parentDir = new File(toPngPath).getParentFile();
+                            if (parentDir != null && !parentDir.exists() && !parentDir.mkdirs()) {
+                                log.warn("Failed to create uv10 image directory: {}", parentDir.getAbsolutePath());
+                            }
+                            ncDataModel.setIsWind(Boolean.TRUE)
+                                    .setUDataArray(ncDataModel.getDataArray())
+                                    .setVDataArray(vNcDataModel.getDataArray());
+                            ncDataModel.toWindPng(toPngPath, lat, lon);
+                            ncBeanModelList.add(new NcBeanModel().setPngPath(toPngPath).setVariableName(uvVariableName).setLevel(finalLevel).setTime(finalTime));
                         }
-                        ncDataModel.setIsWind(Boolean.TRUE)
-                                .setUDataArray(ncDataModel.getDataArray())
-                                .setVDataArray(vNcDataModel.getDataArray());
-                        ncDataModel.toWindPng(toPngPath, lat, lon);
-                        ncBeanModelList.add(new NcBeanModel().setPngPath(toPngPath).setVariableName(uvVariableName).setLevel(finalLevel).setTime(finalTime));
                     }
                 }
             } else {
@@ -334,6 +346,13 @@ public class NcToPngUtils {
         // 设置为null 方便gc
         ncDataModel = null;
         return ncBeanModelList;
+    }
+
+    private static boolean shouldSkipVariable(String variableName, Set<String> filterKeywords) {
+        if (filterKeywords == null || filterKeywords.isEmpty() || variableName == null) {
+            return false;
+        }
+        return filterKeywords.contains(StringUtils.lowerCase(variableName));
     }
 
     private static boolean startsWithAnyPrefix(String value, String[] prefixes) {
@@ -797,3 +816,4 @@ public class NcToPngUtils {
         }
     }
 }
+

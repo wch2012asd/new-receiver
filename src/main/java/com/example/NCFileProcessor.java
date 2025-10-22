@@ -295,7 +295,7 @@ public class NCFileProcessor {
             
             // 使用NcToPngUtils转换NC文件
             System.out.println("    开始调用NcToPngUtils.ncToPng...");
-            List<NcBeanModel> results = NcToPngUtils.ncToPng(ncFilePath.toString(), outputDirPath);
+            List<NcBeanModel> results = NcToPngUtils.ncToPng(ncFilePath.toString(), outputDirPath, configManager.getElementFilterKeywords());
             System.out.println("    NcToPngUtils.ncToPng调用完成，结果数量: " + (results != null ? results.size() : "null"));
             
             // 记录转换结果到数据库（如果可用且未被排除）
